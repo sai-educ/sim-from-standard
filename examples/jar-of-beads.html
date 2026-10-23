@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jar of Beads</title>
+<style>
+:root{--bg:#fafaf7;--card:#fff;--ink:#1d1d1b;--mute:#5b5b55;--line:#e3e1da;--accent:#2f5bea;--good:#1a7f4b;--bad:#b3261e;--soft:#eef2ff;--bar:#2f5bea}
+@media (prefers-color-scheme:dark){:root{--bg:#141413;--card:#1e1e1c;--ink:#f1efe8;--mute:#a9a69b;--line:#34332f;--accent:#8aa6ff;--good:#5fd39a;--bad:#ff8a80;--soft:#222a45;--bar:#8aa6ff}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:880px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:1.6rem;margin:0 0 4px}
+.tag{color:var(--mute);font-size:.9rem;margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0}
+.card h2{font-size:1rem;margin:0 0 10px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+button{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 14px;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button[aria-pressed="true"]{background:var(--soft);border-color:var(--accent)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.readout{min-height:3em}
+.good{color:var(--good)}.bad{color:var(--bad)}
+.locked{opacity:.45;pointer-events:none}
+svg{width:100%;height:auto;display:block}
+details{margin-top:24px;color:var(--mute)}
+.stats{display:flex;flex-wrap:wrap;gap:20px}
+.stat b{display:block;font-size:1.4rem}
+</style>
+</head>
+<body>
+<main>
+<h1>Jar of Beads</h1>
+<p class="tag">CCSS 7.SP.A.1 · Samples support inferences only when they are representative and big enough</p>
+
+<section class="card" id="predict">
+  <h2>1 · Predict</h2>
+  <p>A jar holds 1,000 beads, some red, the rest white. You pull out a handful of <strong>10</strong> beads and count the red ones. If you did that 200 times, the share of red in your handfuls would be…</p>
+  <div class="row" role="group" aria-label="Your prediction">
+    <button data-guess="same">about the same every time</button>
+    <button data-guess="varies">quite different from handful to handful</button>
+  </div>
+  <p id="guessNote" aria-live="polite"></p>
+</section>
+
+<section class="card locked" id="play">
+  <h2>2 · Play</h2>
+  <p>The jar’s true red share is hidden. Choose a handful size, then draw many handfuls. Each bar in the chart counts how many handfuls had that share of red.</p>
+  <div class="row" role="group" aria-label="Handful size" id="sizes"></div>
+  <div class="row">
+    <button id="draw1">Draw 1 handful</button>
+    <button id="draw50">Draw 50 handfuls</button>
+    <button id="reset">Reset chart</button>
+    <button id="reveal" aria-pressed="false">Show true share</button>
+  </div>
+  <svg id="chart" viewBox="0 0 600 220" role="img" aria-label="Histogram of the share of red beads in each handful"></svg>
+  <div class="stats">
+    <div class="stat"><b id="sCount">0</b>handfuls</div>
+    <div class="stat"><b id="sMean">–</b>average share red</div>
+    <div class="stat"><b id="sSpread">–</b>spread (SD)</div>
+  </div>
+  <p class="readout" id="readout" aria-live="polite"></p>
+</section>
+
+<section class="card" id="explain" hidden>
+  <h2>3 · Explain</h2>
+  <p id="explainText"></p>
+</section>
+
+<section class="card" id="check" hidden>
+  <h2>4 · Check</h2>
+  <p>A school surveys <strong>8 students</strong> and finds 6 prefer a new lunch menu. The principal announces “75% of students love it.” What does the beads chart suggest?</p>
+  <div class="row" role="group" id="options" aria-label="Choose an answer"></div>
+  <p id="checkNote" aria-live="polite"></p>
+</section>
+
+<details>
+<summary>Teacher note</summary>
+<p><strong>Standard:</strong> 7.SP.A.1 – understand that statistics can be used to gain information about a population by examining a sample; generalisations are valid only if the sample is representative; random sampling tends to produce representative samples and supports valid inferences.</p>
+<p><strong>Target misconception:</strong> “A sample mirrors the population, whatever its size” (belief in the law of small numbers).</p>
+<p><strong>Ask:</strong> What happens to the width of the chart when the handful grows? Does the centre move? How big would a handful need to be before you trust it?</p>
+<p><strong>Extend:</strong> change the hidden share in the code; discuss bias (what if reds are heavier and sink?).</p>
+<p><strong>Limit:</strong> samples here are random by construction; the simulation does not show biased sampling.</p>
+</details>
+</main>
+<script>
+const TRUE_P = 0.3, BEADS = 1000, BINS = 21;
+const SIZES = [5, 10, 30, 100];
+const el = id => document.getElementById(id);
+const state = { guess: null, n: 10, results: [], reveal: false, tried: new Set() };
+const RED_TOTAL = Math.round(TRUE_P * BEADS);
+
+// Hypergeometric draw without replacement, so the jar really is finite.
+function drawHandful(n) {
+  let red = RED_TOTAL, total = BEADS, got = 0;
+  for (let i = 0; i < n; i++) {
+    if (Math.random() < red / total) { got++; red--; }
+    total--;
+  }
+  return got / n;
+}
+
+const stats = xs => {
+  const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const sd = Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / xs.length);
+  return { mean, sd };
+};
+
+function renderChart() {
+  const bins = new Array(BINS).fill(0);
+  state.results.forEach(r => { bins[Math.min(BINS - 1, Math.round(r * (BINS - 1)))]++; });
+  const max = Math.max(4, ...bins);
+  const bw = 600 / BINS;
+  let svg = "";
+  bins.forEach((c, i) => {
+    const h = (c / max) * 170;
+    svg += `<rect x="${i * bw + 2}" y="${190 - h}" width="${bw - 4}" height="${h}" rx="3" fill="var(--bar)"/>`;
+  });
+  svg += `<line x1="0" x2="600" y1="190" y2="190" stroke="currentColor" opacity=".4"/>`;
+  [0, 0.25, 0.5, 0.75, 1].forEach(t => {
+    svg += `<text x="${t * (600 - bw) + bw / 2}" y="210" font-size="12" text-anchor="middle" fill="currentColor">${Math.round(t * 100)}%</text>`;
+  });
+  if (state.reveal) {
+    const x = TRUE_P * (600 - bw) + bw / 2;
+    svg += `<line x1="${x}" x2="${x}" y1="10" y2="190" stroke="#d97706" stroke-width="3" stroke-dasharray="6 4"/>` +
+           `<text x="${x + 6}" y="22" font-size="12" fill="currentColor">true share ${Math.round(TRUE_P * 100)}%</text>`;
+  }
+  el("chart").innerHTML = svg;
+  const n = state.results.length;
+  el("sCount").textContent = n;
+  if (n) {
+    const { mean, sd } = stats(state.results);
+    el("sMean").textContent = Math.round(mean * 100) + "%";
+    el("sSpread").textContent = Math.round(sd * 100) + " pts";
+  } else { el("sMean").textContent = "–"; el("sSpread").textContent = "–"; }
+}
+
+function afterDraw() {
+  state.tried.add(state.n);
+  renderChart();
+  const n = state.results.length;
+  el("readout").textContent = n
+    ? `Handful size ${state.n}: ${n} handfuls drawn. The chart’s width is how far a single handful can be from the average.`
+    : "";
+  if (state.tried.size >= 2 && n >= 50) revealExplain();
+}
+
+function revealExplain() {
+  if (!el("explain").hidden) return;
+  const surprised = state.guess === "same";
+  el("explainText").innerHTML =
+    (surprised ? "You expected handfuls to agree, but small handfuls vary a lot. " : "You expected variation, and you saw how much. ") +
+    "Larger samples give a <strong>narrower</strong> chart: single results land closer to the truth. " +
+    "A small sample can be right, but it can also be far off, and you can’t tell which from one sample alone.";
+  el("explain").hidden = false;
+  el("check").hidden = false;
+}
+
+function pickSize(n) {
+  state.n = n;
+  state.results = [];
+  el("sizes").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.n) === n)));
+  afterDraw();
+}
+
+function setup() {
+  el("predict").querySelectorAll("[data-guess]").forEach(b => b.addEventListener("click", () => {
+    state.guess = b.dataset.guess;
+    el("predict").querySelectorAll("button").forEach(x => { x.disabled = true; x.setAttribute("aria-pressed", String(x === b)); });
+    el("guessNote").textContent = "Locked in. Now test it with real draws.";
+    el("play").classList.remove("locked");
+  }));
+  SIZES.forEach(n => {
+    const b = document.createElement("button");
+    b.textContent = `${n} beads`; b.dataset.n = n;
+    b.addEventListener("click", () => pickSize(n));
+    el("sizes").appendChild(b);
+  });
+  el("draw1").addEventListener("click", () => { state.results = [...state.results, drawHandful(state.n)]; afterDraw(); });
+  el("draw50").addEventListener("click", () => {
+    const batch = Array.from({ length: 50 }, () => drawHandful(state.n));
+    state.results = [...state.results, ...batch]; afterDraw();
+  });
+  el("reset").addEventListener("click", () => { state.results = []; afterDraw(); });
+  el("reveal").addEventListener("click", e => {
+    state.reveal = !state.reveal;
+    e.currentTarget.setAttribute("aria-pressed", String(state.reveal));
+    renderChart();
+  });
+
+  [["The 75% is solid: it came straight from the survey.", false, "Handfuls of 8 vary widely in the chart. The true share could be far from 75%."],
+   ["The result is shaky: a sample of 8 can easily miss by 20 points or more.", true, "Yes. That is the wide chart you saw at small handful sizes."],
+   ["It must be wrong: samples are always off by a lot.", false, "Not always. Large samples gave narrow charts. Size matters, and small is not automatically wrong."]]
+  .forEach(([label, ok, msg]) => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.addEventListener("click", () => {
+      el("checkNote").innerHTML = `<span class="${ok ? "good" : "bad"}">${ok ? "Correct." : "Not quite."}</span> ${msg}`;
+    });
+    el("options").appendChild(b);
+  });
+  pickSize(10);
+}
+setup();
+</script>
+</body>
+</html>

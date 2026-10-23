@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moth Forest</title>
+<style>
+:root{--bg:#fafaf7;--card:#fff;--ink:#1d1d1b;--mute:#5b5b55;--line:#e3e1da;--accent:#2f5bea;--good:#1a7f4b;--bad:#b3261e;--soft:#eef2ff}
+@media (prefers-color-scheme:dark){:root{--bg:#141413;--card:#1e1e1c;--ink:#f1efe8;--mute:#a9a69b;--line:#34332f;--accent:#8aa6ff;--good:#5fd39a;--bad:#ff8a80;--soft:#222a45}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:880px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:1.6rem;margin:0 0 4px}
+.tag{color:var(--mute);font-size:.9rem;margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0}
+.card h2{font-size:1rem;margin:0 0 10px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+button{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 14px;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button[aria-pressed="true"]{background:var(--soft);border-color:var(--accent)}
+button:disabled{opacity:.5;cursor:not-allowed}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.readout{min-height:3em}
+.good{color:var(--good)}.bad{color:var(--bad)}
+.locked{opacity:.45;pointer-events:none}
+svg{width:100%;height:auto;display:block}
+details{margin-top:24px;color:var(--mute)}
+</style>
+</head>
+<body>
+<main>
+<h1>Moth Forest</h1>
+<p class="tag">NGSS MS-LS4-6 · Natural selection changes populations over generations</p>
+
+<section class="card" id="predict">
+  <h2>1 · Predict</h2>
+  <p>A forest’s tree bark turns dark with soot. Moths on it are mostly pale, and birds eat the ones they can see. After many generations, why will the moths be darker?</p>
+  <div class="row" role="group" aria-label="Your prediction">
+    <button data-guess="need">Each moth darkens because it needs to hide</button>
+    <button data-guess="selection">Darker moths survive and have more young</button>
+  </div>
+  <p id="guessNote" aria-live="polite"></p>
+</section>
+
+<section class="card locked" id="play">
+  <h2>2 · Play</h2>
+  <svg id="forest" viewBox="0 0 600 200" role="img" aria-label="Moths on tree bark. Each moth keeps its colour for life."></svg>
+  <label for="bark">Bark darkness: <strong id="barkLabel"></strong></label>
+  <input id="bark" type="range" min="0" max="1" step="0.05" value="0.2">
+  <div class="row">
+    <button id="step">Next generation</button>
+    <button id="run">Run 20 generations</button>
+    <button id="reset">Reset</button>
+  </div>
+  <svg id="chart" viewBox="0 0 600 160" role="img" aria-label="Average moth colour per generation against bark colour"></svg>
+  <p class="readout" id="readout" aria-live="polite"></p>
+</section>
+
+<section class="card" id="explain" hidden>
+  <h2>3 · Explain</h2>
+  <p id="explainText"></p>
+</section>
+
+<section class="card" id="check" hidden>
+  <h2>4 · Check</h2>
+  <p>Bark is cleaned and turns pale again. What happens to the moths?</p>
+  <div class="row" role="group" id="options" aria-label="Choose an answer"></div>
+  <p id="checkNote" aria-live="polite"></p>
+</section>
+
+<details>
+<summary>Teacher note</summary>
+<p><strong>Standard:</strong> MS-LS4-6 – use mathematical representations to support explanations of how natural selection may lead to increases and decreases of specific traits in populations over time.</p>
+<p><strong>Target misconception:</strong> “Organisms change because they need to” (need-driven, Lamarckian reasoning). Here no moth ever changes colour: the picture only shifts because who survives and reproduces shifts.</p>
+<p><strong>Ask:</strong> Did any one moth change colour? What would happen if bark darkened faster than variation could appear? Why does the average move gradually?</p>
+<p><strong>Extend:</strong> set mutation to zero in the code and see what is lost.</p>
+<p><strong>Limit:</strong> a single heritable trait with random mating and no genetics; real colour traits involve many genes.</p>
+</details>
+</main>
+<script>
+const N = 60, MUTATION = 0.06, PREDATION = 0.8, BASE_SURVIVE = 0.15;
+const el = id => document.getElementById(id);
+const clamp = x => Math.min(1, Math.max(0, x));
+const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * 1.15;
+
+const makeMoths = () => Array.from({ length: N }, () => clamp(0.2 + (Math.random() - 0.5) * 0.3));
+const state = { guess: null, bark: 0.2, moths: makeMoths(), history: [], gen: 0, swung: false };
+state.history = [{ gen: 0, mean: mean(state.moths), bark: state.bark }];
+
+function mean(xs) { return xs.reduce((a, b) => a + b, 0) / xs.length; }
+
+// Pure: returns the next generation without touching the current one.
+function nextGeneration(moths, bark) {
+  const survivors = moths.filter(c => Math.random() < BASE_SURVIVE + PREDATION * (1 - Math.abs(c - bark)) ** 2);
+  const pool = survivors.length ? survivors : moths;
+  return Array.from({ length: N }, () => clamp(pool[Math.floor(Math.random() * pool.length)] + gauss() * MUTATION));
+}
+
+const grey = c => { const v = Math.round(235 - c * 205); return `rgb(${v},${v},${Math.min(255, v + 6)})`; };
+
+function renderForest() {
+  const b = Math.round(235 - state.bark * 205);
+  let svg = `<rect width="600" height="200" rx="10" fill="rgb(${b},${b - 8},${b - 14})"/>`;
+  for (let i = 0; i < 12; i++) svg += `<rect x="${i * 52 + 10}" y="0" width="3" height="200" fill="#000" opacity=".12"/>`;
+  state.moths.forEach((c, i) => {
+    const x = 20 + (i % 15) * 38 + ((i * 7) % 11);
+    const y = 24 + Math.floor(i / 15) * 44 + ((i * 5) % 9);
+    svg += `<ellipse cx="${x}" cy="${y}" rx="13" ry="8" fill="${grey(c)}" stroke="#000" stroke-opacity=".35"/>`;
+  });
+  el("forest").innerHTML = svg;
+}
+
+function renderChart() {
+  const h = state.history, max = Math.max(20, h.length - 1);
+  const X = g => 20 + (g / max) * 560, Y = v => 140 - v * 120;
+  const path = key => h.map((p, i) => `${i ? "L" : "M"}${X(p.gen)},${Y(p[key])}`).join(" ");
+  el("chart").innerHTML =
+    `<line x1="20" x2="580" y1="140" y2="140" stroke="currentColor" opacity=".4"/>` +
+    `<path d="${path("bark")}" fill="none" stroke="#d97706" stroke-width="3" stroke-dasharray="6 4"/>` +
+    `<path d="${path("mean")}" fill="none" stroke="var(--accent)" stroke-width="3"/>` +
+    `<text x="24" y="14" font-size="12" fill="currentColor">solid: average moth · dashed: bark · 0 = pale, 1 = dark</text>`;
+}
+
+function renderAll() {
+  el("barkLabel").textContent = state.bark.toFixed(2);
+  el("bark").value = state.bark;
+  renderForest(); renderChart();
+  const m = mean(state.moths);
+  el("readout").textContent =
+    `Generation ${state.gen}. Average moth colour ${m.toFixed(2)}, bark ${state.bark.toFixed(2)}. Each moth keeps its colour its whole life.`;
+  const first = state.history[0].mean;
+  if (state.gen >= 10 && Math.abs(m - first) > 0.15) revealExplain();
+}
+
+function revealExplain() {
+  if (!el("explain").hidden) return;
+  el("explainText").innerHTML =
+    (state.guess === "need" ? "Notice that no moth ever changed colour: its colour is fixed. " : "Right: no moth changes colour. ") +
+    "Moths that match the bark are eaten less, so they leave more offspring, who inherit similar colours (plus a little random variation). " +
+    "The <strong>population</strong> shifts, not the individuals, and it only follows the bark because variation was already there.";
+  el("explain").hidden = false;
+  el("check").hidden = false;
+}
+
+function advance(times) {
+  for (let i = 0; i < times; i++) {
+    const moths = nextGeneration(state.moths, state.bark);
+    state.moths = moths;
+    state.gen += 1;
+    state.history = [...state.history, { gen: state.gen, mean: mean(moths), bark: state.bark }];
+  }
+  renderAll();
+}
+
+function setup() {
+  el("predict").querySelectorAll("[data-guess]").forEach(b => b.addEventListener("click", () => {
+    state.guess = b.dataset.guess;
+    el("predict").querySelectorAll("button").forEach(x => { x.disabled = true; x.setAttribute("aria-pressed", String(x === b)); });
+    el("guessNote").textContent = "Locked in. Darken the bark and run generations to test it.";
+    el("play").classList.remove("locked");
+  }));
+  el("bark").addEventListener("input", e => {
+    state.bark = Number(e.target.value);
+    state.history = state.history.map((p, i, a) => (i === a.length - 1 ? { ...p, bark: state.bark } : p));
+    renderAll();
+  });
+  el("step").addEventListener("click", () => advance(1));
+  el("run").addEventListener("click", () => advance(20));
+  el("reset").addEventListener("click", () => {
+    state.moths = makeMoths(); state.gen = 0; state.bark = 0.2;
+    state.history = [{ gen: 0, mean: mean(state.moths), bark: state.bark }];
+    renderAll();
+  });
+  [["Each moth lightens to match the clean bark.", false, "Individual moths never change colour. Check the forest: the same moths keep the same colours."],
+   ["Pale moths now survive better, so over generations the population gets paler.", true, "Yes. The same process runs in the other direction."],
+   ["Nothing changes: the moths already adapted.", false, "Adaptation is not permanent. When the environment changes, so does who survives."]]
+  .forEach(([label, ok, msg]) => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.addEventListener("click", () => {
+      el("checkNote").innerHTML = `<span class="${ok ? "good" : "bad"}">${ok ? "Correct." : "Not quite."}</span> ${msg}`;
+    });
+    el("options").appendChild(b);
+  });
+  renderAll();
+}
+setup();
+</script>
+</body>
+</html>

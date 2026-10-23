@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scale Machine</title>
+<style>
+:root{--bg:#fafaf7;--card:#fff;--ink:#1d1d1b;--mute:#5b5b55;--line:#e3e1da;--accent:#2f5bea;--good:#1a7f4b;--bad:#b3261e;--soft:#eef2ff}
+@media (prefers-color-scheme:dark){:root{--bg:#141413;--card:#1e1e1c;--ink:#f1efe8;--mute:#a9a69b;--line:#34332f;--accent:#8aa6ff;--good:#5fd39a;--bad:#ff8a80;--soft:#222a45}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:880px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:1.6rem;margin:0 0 4px}
+.tag{color:var(--mute);font-size:.9rem;margin:0 0 20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin:14px 0}
+.card h2{font-size:1rem;margin:0 0 10px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+button{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 14px;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button[aria-pressed="true"]{background:var(--soft);border-color:var(--accent)}
+button:disabled{opacity:.5;cursor:not-allowed}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.readout{font-size:1.15rem;min-height:3em}
+.good{color:var(--good)}.bad{color:var(--bad)}
+.locked{opacity:.45;pointer-events:none}
+svg{width:100%;height:auto;display:block}
+details{margin-top:24px;color:var(--mute)}
+@media (prefers-reduced-motion:no-preference){svg rect{transition:width .25s ease}}
+</style>
+</head>
+<body>
+<main>
+<h1>Scale Machine</h1>
+<p class="tag">CCSS 5.NF.B.5 · Interpret multiplication as scaling</p>
+
+<section class="card" id="predict">
+  <h2>1 · Predict</h2>
+  <p>This machine takes a stick that is <strong>6 units</strong> long and multiplies its length by <strong>½</strong>. The new stick will be…</p>
+  <div class="row" role="group" aria-label="Your prediction">
+    <button data-guess="longer">longer than 6</button>
+    <button data-guess="same">the same as 6</button>
+    <button data-guess="shorter">shorter than 6</button>
+  </div>
+  <p id="guessNote" aria-live="polite"></p>
+</section>
+
+<section class="card locked" id="play" aria-disabled="true">
+  <h2>2 · Play</h2>
+  <svg viewBox="0 0 600 130" role="img" aria-label="Original stick and the scaled stick">
+    <text x="0" y="16" fill="currentColor" font-size="14">Original</text>
+    <rect id="baseBar" x="0" y="24" height="28" rx="6" fill="#9aa4b8"/>
+    <text x="0" y="86" fill="currentColor" font-size="14">After multiplying</text>
+    <rect id="prodBar" x="0" y="94" height="28" rx="6" fill="#2f5bea"/>
+    <line id="refLine" x1="0" x2="0" y1="20" y2="126" stroke="currentColor" stroke-dasharray="4 4" opacity=".5"/>
+  </svg>
+  <label for="factor">Multiply by: <strong id="factorLabel">1</strong></label>
+  <input id="factor" type="range" min="0" max="3" step="0.05" value="1">
+  <div class="row" id="presets" role="group" aria-label="Preset multipliers"></div>
+  <p class="readout" id="readout" aria-live="polite"></p>
+</section>
+
+<section class="card" id="explain" hidden>
+  <h2>3 · Explain</h2>
+  <p id="explainText"></p>
+</section>
+
+<section class="card" id="check" hidden>
+  <h2>4 · Check</h2>
+  <p>A cook has <strong>12 cups</strong> of soup. Which of these gives <em>less</em> than 12 cups?</p>
+  <div class="row" role="group" aria-label="Choose an answer" id="options"></div>
+  <p id="checkNote" aria-live="polite"></p>
+</section>
+
+<details>
+<summary>Teacher note</summary>
+<p><strong>Standard:</strong> 5.NF.B.5 – interpret multiplication as scaling (resizing) by comparing the size of a product to the size of one factor.</p>
+<p><strong>Target misconception:</strong> “Multiplication always makes things bigger.” Learners generalise from whole-number work.</p>
+<p><strong>Ask:</strong> What number makes the stick the same length? Where does the answer switch from shrinking to growing? What would ×0 do?</p>
+<p><strong>Extend:</strong> predict the product for ×¾ and ×1¼ before moving the slider; connect to unit rates and percent change.</p>
+<p><strong>Limit:</strong> shows lengths only; area models of fraction multiplication are not covered.</p>
+</details>
+</main>
+<script>
+const BASE = 6, UNIT = 30;
+const PRESETS = [[0.25,"×¼"],[0.5,"×½"],[0.75,"×¾"],[1,"×1"],[1.25,"×1¼"],[2,"×2"],[3,"×3"]];
+const el = id => document.getElementById(id);
+const state = { guess: null, factor: 1, sawShrink: false, sawGrow: false };
+
+const fmt = n => String(Math.round(n * 100) / 100);
+const kind = f => (f < 1 ? "shrinks" : f > 1 ? "grows" : "stays the same");
+
+function render() {
+  const { factor } = state;
+  const product = BASE * factor;
+  el("baseBar").setAttribute("width", BASE * UNIT);
+  el("prodBar").setAttribute("width", Math.max(product * UNIT, 1));
+  el("refLine").setAttribute("x1", BASE * UNIT);
+  el("refLine").setAttribute("x2", BASE * UNIT);
+  el("factor").value = factor;
+  el("factorLabel").textContent = fmt(factor);
+  const cls = factor < 1 ? "good" : "";
+  el("readout").innerHTML =
+    `${BASE} × ${fmt(factor)} = <strong>${fmt(product)}</strong> — the stick <span class="${cls}">${kind(factor)}</span>.`;
+  el("presets").querySelectorAll("button").forEach(b =>
+    b.setAttribute("aria-pressed", String(Math.abs(Number(b.dataset.f) - factor) < 1e-9)));
+  if (factor < 1) state.sawShrink = true;
+  if (factor > 1) state.sawGrow = true;
+  if (state.sawShrink && state.sawGrow) revealExplain();
+}
+
+function revealExplain() {
+  if (!el("explain").hidden) return;
+  const surprised = state.guess !== "shorter";
+  el("explainText").innerHTML =
+    (surprised ? "You predicted “" + state.guess + "”, and the machine showed otherwise. " : "You predicted correctly. ") +
+    "A multiplier below 1 <strong>shrinks</strong> a number, 1 leaves it alone, and above 1 it <strong>grows</strong>. " +
+    "Multiplying is <em>scaling</em>: the multiplier says how many copies of the original you keep, including part of a copy.";
+  el("explain").hidden = false;
+  el("check").hidden = false;
+}
+
+function setup() {
+  el("predict").querySelectorAll("[data-guess]").forEach(b => b.addEventListener("click", () => {
+    state.guess = b.dataset.guess;
+    el("predict").querySelectorAll("button").forEach(x => { x.disabled = true; x.setAttribute("aria-pressed", String(x === b)); });
+    el("guessNote").textContent = "Locked in. Now test it: slide the multiplier and see.";
+    const play = el("play");
+    play.classList.remove("locked");
+    play.removeAttribute("aria-disabled");
+    state.factor = 1;
+    render();
+  }));
+  PRESETS.forEach(([f, label]) => {
+    const b = document.createElement("button");
+    b.textContent = label; b.dataset.f = f;
+    b.addEventListener("click", () => { state.factor = f; render(); });
+    el("presets").appendChild(b);
+  });
+  el("factor").addEventListener("input", e => { state.factor = Number(e.target.value); render(); });
+
+  const options = [
+    ["× 2", false, "Doubling makes 24 cups: bigger. Try ×2 on the stick to see it grow."],
+    ["× 1", false, "×1 keeps it exactly 12: the same, not less."],
+    ["× ⅔", true, "Yes. Any multiplier below 1 gives less than you started with."],
+    ["× 1¼", false, "That is bigger than 1, so it grows to 15. “Multiplication always makes bigger” works here, but not for ×⅔."],
+  ];
+  options.forEach(([label, ok, msg]) => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.addEventListener("click", () => {
+      el("checkNote").innerHTML = `<span class="${ok ? "good" : "bad"}">${ok ? "Correct." : "Not quite."}</span> ${msg}`;
+    });
+    el("options").appendChild(b);
+  });
+  render();
+}
+setup();
+</script>
+</body>
+</html>
